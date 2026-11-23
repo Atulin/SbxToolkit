@@ -1,0 +1,235 @@
+﻿
+name: Release SbxToolkit
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PROJECT_PATH: src/SbxToolkit/SbxToolkit.csproj
+  APP_NAME: SbxToolkit
+  BUCKET_REPOSITORY: Atulin/scoop-bucket
+
+jobs:
+  release:
+    name: Build and release
+    runs-on: windows-2025
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v6
+
+      - name: Setup .NET 11
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 11.0.x
+
+      - name: Get release version
+        id: version
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+
+          if ($tag -notmatch '^v(?<version>\d+\.\d+\.\d+(?:[-+].*)?)$') {
+            throw "Invalid release tag: $tag"
+          }
+
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "version=$($Matches.version)" >> $env:GITHUB_OUTPUT
+
+      # ─────────────────────────────────────────────
+      # Native AOT
+      # ─────────────────────────────────────────────
+
+      - name: Publish Native AOT
+        shell: pwsh
+        run: |
+          dotnet publish $env:PROJECT_PATH `
+            --configuration Release `
+            --runtime win-x64 `
+            --self-contained true `
+            --output "$env:RUNNER_TEMP/aot" `
+            -p:PublishAot=true `
+            -p:PublishSingleFile=true `
+            -p:PublishTrimmed=true
+
+      # ─────────────────────────────────────────────
+      # Framework-dependent
+      # ─────────────────────────────────────────────
+
+      - name: Publish framework-dependent
+        shell: pwsh
+        run: |
+          dotnet publish $env:PROJECT_PATH `
+            --configuration Release `
+            --runtime win-x64 `
+            --self-contained false `
+            --output "$env:RUNNER_TEMP/fd" `
+            -p:PublishAot=false `
+            -p:PublishSingleFile=true `
+            -p:PublishTrimmed=false
+
+      # ─────────────────────────────────────────────
+      # Packaging and SHA256
+      # ─────────────────────────────────────────────
+
+      - name: Package releases
+        id: package
+        shell: pwsh
+        run: |
+          $artifacts = @{}
+
+          foreach ($variant in @("aot", "fd")) {
+            $source = "$env:RUNNER_TEMP/$variant"
+            $executable = Join-Path $source "$env:APP_NAME.exe"
+            $zip = "$env:RUNNER_TEMP/sbxtoolkit-win-x64-$variant.zip"
+
+            if (-not (Test-Path $executable)) {
+              throw "Executable not found: $executable"
+            }
+
+            Compress-Archive `
+              -Path "$source/*" `
+              -DestinationPath $zip `
+              -CompressionLevel Optimal
+
+            $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+
+            $artifacts[$variant] = @{
+              path = $zip
+              hash = $hash
+            }
+          }
+
+          "aot_path=$($artifacts.aot.path)" >> $env:GITHUB_OUTPUT
+          "aot_hash=$($artifacts.aot.hash)" >> $env:GITHUB_OUTPUT
+          "fd_path=$($artifacts.fd.path)" >> $env:GITHUB_OUTPUT
+          "fd_hash=$($artifacts.fd.hash)" >> $env:GITHUB_OUTPUT
+
+      # ─────────────────────────────────────────────
+      # GitHub Release
+      # ─────────────────────────────────────────────
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          gh release create `
+            "${{ steps.version.outputs.tag }}" `
+            "${{ steps.package.outputs.aot_path }}" `
+            "${{ steps.package.outputs.fd_path }}" `
+            --title "SbxToolkit ${{ steps.version.outputs.version }}" `
+            --generate-notes
+
+      # ─────────────────────────────────────────────
+      # GitHub App authentication
+      # ─────────────────────────────────────────────
+
+      - name: Generate Release Bot token
+        id: release-bot
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.ATULIN_RELEASE_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.ATULIN_RELEASE_BOT_PRIVATE_KEY }}
+          owner: Atulin
+          repositories: scoop-bucket
+          permission-contents: write
+
+      # ─────────────────────────────────────────────
+      # Scoop bucket
+      # ─────────────────────────────────────────────
+
+      - name: Checkout Scoop bucket
+        uses: actions/checkout@v6
+        with:
+          repository: Atulin/scoop-bucket
+          token: ${{ steps.release-bot.outputs.token }}
+          path: scoop-bucket
+
+      - name: Update Scoop manifests
+        working-directory: scoop-bucket
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          AOT_HASH: ${{ steps.package.outputs.aot_hash }}
+          FD_HASH: ${{ steps.package.outputs.fd_hash }}
+        shell: pwsh
+        run: |
+          $baseUrl = "https://github.com/Atulin/SbxToolkit/releases/download/v$env:VERSION"
+
+          $common = @{
+            homepage = "https://github.com/Atulin/SbxToolkit"
+            license = "MIT"
+            checkver = @{
+              github = "https://github.com/Atulin/SbxToolkit"
+            }
+          }
+
+          $manifests = @(
+            @{
+              name = "sbxtoolkit"
+              description = "Docker Sandboxex supercharger (Native AOT)"
+              url = "$baseUrl/sbxtoolkit-win-x64-aot.zip"
+              hash = $env:AOT_HASH
+              variant = "aot"
+            },
+            @{
+              name = "sbxtoolkit-fd"
+              description = "Docker Sandboxex supercharger (framework-dependent)"
+              url = "$baseUrl/sbxtoolkit-win-x64-fd.zip"
+              hash = $env:FD_HASH
+              variant = "fd"
+            }
+          )
+
+          foreach ($item in $manifests) {
+            $manifest = [ordered]@{
+              version = $env:VERSION
+              description = $item.description
+              homepage = $common.homepage
+              license = $common.license
+              url = $item.url
+              hash = $item.hash
+              bin = "SbxToolkit.exe"
+              checkver = $common.checkver
+              autoupdate = @{
+                url = "https://github.com/Atulin/SbxToolkit/releases/download/v`$version/sbxtoolkit-win-x64-$($item.variant).zip"
+              }
+            }
+
+            $json = $manifest | ConvertTo-Json -Depth 10
+
+            $path = "bucket/$($item.name).json"
+            Set-Content -Path $path -Value $json -Encoding utf8
+          }
+
+      # ─────────────────────────────────────────────
+      # Commit and push
+      # ─────────────────────────────────────────────
+
+      - name: Commit and push Scoop manifests
+        working-directory: scoop-bucket
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add bucket/sbxtoolkit.json bucket/sbxtoolkit-fd.json
+
+          git diff --cached --quiet
+
+          if ($LASTEXITCODE -eq 1) {
+            git commit -m "SbxToolkit ${{ steps.version.outputs.version }}"
+            git push
+          }
+          elseif ($LASTEXITCODE -ne 0) {
+            throw "Failed to inspect staged changes."
+          }
