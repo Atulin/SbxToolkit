@@ -47,9 +47,9 @@ foreach (var manifest in manifests)
 
 return;
 
-record Autoupdate(string Url);
+internal sealed record Autoupdate(string Url);
 
-class Manifest
+internal sealed class Manifest
 {
 	public required string Name { get; init; }
 	public required string Version { get; init; }

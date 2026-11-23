@@ -41,8 +41,12 @@ public static class ReviewPrompt
 		var selections = new int[items.Length];
 		Array.Fill(selections, 0);
 
-		var result = AnsiConsole.Live(BuildView(items, display, optionLabel, selections, selected, firstVisible, pageSize))
+		var view = BuildView(items, display, optionLabel, selections, selected, firstVisible, pageSize);
+		
+		var result = AnsiConsole.Live(view)
 			.Start(ctx => {
+				ctx.Refresh();
+				
 				while (true)
 				{
 					var key = Console.ReadKey(intercept: true).Key;
@@ -131,7 +135,7 @@ public static class ReviewPrompt
 	{
 		var table = new Table()
 			.Border(TableBorder.Rounded)
-			.AddColumn("Request")
+			.AddColumn($"Request ({items.Length})")
 			.AddColumn("Decision");
 
 		var lastVisible = Math.Min(items.Length, firstVisible + pageSize);
