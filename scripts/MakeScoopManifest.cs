@@ -32,8 +32,8 @@ var manifests = new[] { true, false }
 		Hash = isAot ? aotHash : fdHash,
 		Bin =
 		[
-			new NamedBinary("SbxToolkit.exe", "sbxtoolkit"),
-			new NamedBinary("SbxToolkit.exe", "sbxt")
+			["SbxToolkit.exe", "sbxtoolkit"],
+			["SbxToolkit.exe", "sbxt"]
 		],
 		Checkver = new() { ["github"] = repo },
 		Autoupdate = new(Path.Join(baseUrl, isAot ? "sbxtoolkit-win-x64-aot.zip" : "sbxtoolkit-win-x64-fd.zip"))
@@ -47,10 +47,6 @@ foreach (var manifest in manifests)
 
 return;
 
-internal sealed record NamedBinary(string Exe, string Name);
-
-internal union Binary(string, NamedBinary);
-
 record Autoupdate(string Url);
 
 class Manifest
@@ -62,13 +58,17 @@ class Manifest
 	public required string License { get; init; }
 	public required string Url { get; init; }
 	public required string Hash { get; init; }
-	public required List<Binary> Bin { get; init; }
+	public required List<List<string>> Bin { get; init; }
 	public required Dictionary<string, string> Checkver { get; init; }
 	public required Autoupdate? Autoupdate { get; init; }
 }
 
 [JsonSerializable(typeof(Manifest))]
-[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower)]
+[JsonSourceGenerationOptions(
+	PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower,
+	WriteIndented = true,
+	IndentSize = 4
+)]
 internal sealed partial class ManifestContext : JsonSerializerContext;
 
 internal static class Helpers
