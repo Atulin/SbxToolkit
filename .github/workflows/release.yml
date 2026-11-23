@@ -162,65 +162,7 @@ jobs:
           AOT_HASH: ${{ steps.package.outputs.aot_hash }}
           FD_HASH: ${{ steps.package.outputs.fd_hash }}
         shell: pwsh
-        run: |
-          $baseUrl = "https://github.com/Atulin/SbxToolkit/releases/download/v$env:VERSION"
-
-          $common = @{
-            homepage = "https://github.com/Atulin/SbxToolkit"
-            license = "MIT"
-            checkver = @{
-              github = "https://github.com/Atulin/SbxToolkit"
-            }
-          }
-
-          $manifests = @(
-            @{
-              name = "sbxtoolkit"
-              description = "Docker Sandboxex supercharger (Native AOT)"
-              url = "$baseUrl/sbxtoolkit-win-x64-aot.zip"
-              hash = $env:AOT_HASH
-              variant = "aot"
-            },
-            @{
-              name = "sbxtoolkit-fd"
-              description = "Docker Sandboxex supercharger (framework-dependent)"
-              url = "$baseUrl/sbxtoolkit-win-x64-fd.zip"
-              hash = $env:FD_HASH
-              variant = "fd"
-            }
-          )
-
-          New-Item -ItemType Directory -Path "bucket" -Force | Out-Null
-          
-          foreach ($item in $manifests) {
-            $manifest = [ordered]@{
-              version = $env:VERSION
-              description = $item.description
-              homepage = $common.homepage
-              license = $common.license
-              url = $item.url
-              hash = $item.hash
-              bin = @(
-                    @{
-                          name = "sbxtoolkit"
-                          exe = "SbxToolkit.exe"
-                    },
-                      @{
-                         name = "sbxt"
-                         exe = "SbxToolkit.exe"
-                    }
-              )
-              checkver = $common.checkver
-              autoupdate = @{
-                url = "https://github.com/Atulin/SbxToolkit/releases/download/v`$version/sbxtoolkit-win-x64-$($item.variant).zip"
-              }
-            }
-
-            $json = $manifest | ConvertTo-Json -Depth 10
-
-            $path = "bucket/$($item.name).json"
-            Set-Content -Path $path -Value $json -Encoding utf8
-          }
+        run: dotnet run ./scripts/MakeScoopManifest.cs
 
       # ─────────────────────────────────────────────
       # Commit and push
