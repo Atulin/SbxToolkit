@@ -190,6 +190,8 @@ jobs:
             }
           )
 
+          New-Item -ItemType Directory -Path "bucket" -Force | Out-Null
+          
           foreach ($item in $manifests) {
             $manifest = [ordered]@{
               version = $env:VERSION
