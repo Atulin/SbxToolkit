@@ -162,7 +162,7 @@ jobs:
           AOT_HASH: ${{ steps.package.outputs.aot_hash }}
           FD_HASH: ${{ steps.package.outputs.fd_hash }}
         shell: pwsh
-        run: dotnet run --file ../../scripts/MakeScoopManifest.cs
+        run: dotnet run --file ../../SbxToolkit/scripts/MakeScoopManifest.cs
 
       # ─────────────────────────────────────────────
       # Commit and push
