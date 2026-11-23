@@ -200,7 +200,16 @@ jobs:
               license = $common.license
               url = $item.url
               hash = $item.hash
-              bin = @("SbxToolkit.exe", "sbxt")
+              bin = @(
+                    @{
+                          name = "sbxtoolkit"
+                          exe = "SbxToolkit.exe"
+                    },
+                      @{
+                         name = "sbxt"
+                         exe = "SbxToolkit.exe"
+                    }
+              )
               checkver = $common.checkver
               autoupdate = @{
                 url = "https://github.com/Atulin/SbxToolkit/releases/download/v`$version/sbxtoolkit-win-x64-$($item.variant).zip"
